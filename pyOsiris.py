@@ -24,6 +24,30 @@ input_folder = args['input_folder']
 
 input_path = os.path.join(cwd, input_folder)
 
+# Define functions for the reduction
+
+def make_master_bias():
+
+    return None
+
+def subtract_bias_frame():
+
+    return None
+
+def make_master_flat_field():
+
+    return None
+
+def remove_overscan():
+
+    # Might not use this.
+
+    return None
+
+def create_onedspec():
+
+    return None
+
 # Count the number of observation groups
 
 input_folders = np.sort([i for i in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, i))])
@@ -34,6 +58,40 @@ input_grps = list(np.array(input_folders)[np.where(np.array(input_folders) != st
 
 if custom_std_grp != None:
     print("Custom standard group defined: " + custom_std_grp)
+
+    custom_std_present = os.path.isdir(os.path.join(input_path, custom_std_grp))
+
+    if custom_std_present == False:
+        raise NameError("Custom standard group not found in input folder. Exiting...")
+    else:
+        print("Processing standard group...")
+
+    # Since we have a custom standard star group, we process it first.
+
+    std_arc = []
+    std_bias = []
+    std_flat = []
+    std_obj = []
+
+    for file in os.listdir(os.path.join(input_path, custom_std_grp, "arc")):
+        if file.endswith(".fits"):
+            std_arc.append(os.path.join(input_path, custom_std_grp, "arc", file))
+
+    for file in os.listdir(os.path.join(input_path, custom_std_grp, "bias")):
+        if file.endswith(".fits"):
+            std_bias.append(os.path.join(input_path, custom_std_grp, "bias", file))
+
+    for file in os.listdir(os.path.join(input_path, custom_std_grp, "flat")):
+        if file.endswith(".fits"):
+            std_flat.append(os.path.join(input_path, custom_std_grp, "flat", file))
+
+    for file in os.listdir(os.path.join(input_path, custom_std_grp, "object")):
+        if file.endswith(".fits"):
+            std_obj.append(os.path.join(input_path, custom_std_grp, "object", file))
+
+    # Median combine bias frames
+
+
 
 for i in input_grps:
     print("Beginning group: " + i)
