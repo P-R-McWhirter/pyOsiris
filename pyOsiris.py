@@ -324,8 +324,6 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
             stds_master, stds_exptime = get_input_data(stds_grism, bias_master, flat_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
 
-            # Remove the bias from the 
-
         else:
 
             stds_master = None
