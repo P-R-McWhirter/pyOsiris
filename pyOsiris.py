@@ -6,6 +6,7 @@ from astropy.io import fits
 from astropy.nddata import CCDData
 from astropy.stats import sigma_clip
 from ccdproc import Combiner
+from aspired import image_reduction
 from aspired import spectral_reduction
 
 ap = argparse.ArgumentParser()
@@ -451,7 +452,62 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, hdunum = 2, cli
 
     return unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths
 
+def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths, custom_std_grp):
 
+    for n, j in enumerate(unique_grisms):
+
+        if j == "OPEN":
+
+            continue
+
+        light_frame = fits.open(all_master_obj_paths[n])[0].data
+
+        twodspec = spectral_reduction.TwoDSpec(light_frame, cosmicray=True, readnoise=4.5)
+
+        twodspec.ap_trace(nspec=2, display=False)
+
+        twodspec.ap_extract(
+            apwidth=15,
+            skywidth=10,
+            skydeg=1,
+            optimal=True,
+            display=False,
+            filename='example_output/example_01_a_science_apextract',
+            save_iframe=True)
+
+        twodspec.ap_extract(
+            apwidth=15,
+            skywidth=10,
+            skydeg=1,
+            optimal=True,
+            forced=True,
+            variances=twodspec.spectrum_list[0].var,
+            display=False,
+            filename='example_output/example_01_a_science_apextract_forced_weighted',
+            save_iframe=True)
+
+        twodspec.ap_extract(
+            apwidth=15,
+            skywidth=10,
+            skydeg=1,
+            optimal=False,
+            display=False,
+            filename='example_output/example_01_a_science_apextract_tophat',
+            save_iframe=True)
+
+        twodspec.ap_extract(
+            apwidth=15,
+            skywidth=10,
+            skydeg=1,
+            optimal=True,
+            forced=True,
+            variances=1000000.,
+            display=False,
+            filename=
+            'example_output/example_01_a_science_apextract_forced_unit_weighted',
+            save_iframe=True)
+
+    return None
 
 #############################################
 
@@ -508,8 +564,9 @@ for i in input_folders:
 
     unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths = do_img_red(input_path, i, arc, bias, flat, stds, obj, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5, clip_low_flat = 5, clip_high_flat = 5, clip_low_light = 5, clip_high_light = 5)
 
-    print(unique_grisms)
-    print(all_master_arc_paths)
-    print(all_master_stds_paths)
-    print(all_master_obj_paths)
+    # Execute the Aspired 2d spec reduction
+
+    do_spec_red(input_path, i, unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths, custom_std_grp=None)
+
+
 
