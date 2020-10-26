@@ -1,8 +1,11 @@
 import numpy as np
 import argparse
 import os
+from astropy import units as u
 from astropy.io import fits
-from aspired import image_reduction
+from astropy.nddata import CCDData
+from astropy.stats import sigma_clip
+from ccdproc import Combiner
 from aspired import spectral_reduction
 
 ap = argparse.ArgumentParser()
@@ -28,11 +31,174 @@ input_path = os.path.join(cwd, input_folder)
 
 # Define functions for the reduction
 
+def make_master_bias(bias_frames, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5):
+
+    # Creates a master bias frame using median combine
+
+    print("Creating a master bias frame...")
+
+    bias_CCDData = []
+
+    for i in bias_frames:
+            # Open all the bias frames
+            bias = fits.open(i)[hdunum]
+            bias_CCDData.append(CCDData(bias.data, unit=u.adu))
+
+    # Put data into a Combiner
+    bias_combiner = Combiner(bias_CCDData)
+
+    # Apply sigma clipping
+    bias_combiner.sigma_clipping(low_thresh=clip_low_bias, high_thresh=clip_high_bias, func=np.ma.median)
+
+    bias_master = bias_combiner.median_combine()
+
+    # Free memory
+    del bias_CCDData
+    del bias_combiner
+
+    print("Master bias frame complete.")
+
+    return bias_master
+
+def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5):
+
+    # Creates a master flat frame using median combine
+
+    print("Creating a master flat frame...")
+
+    flat_CCDData = []
+
+    for i in flat_frames:
+            # Open all the flat frames
+            flat = fits.open(i)[hdunum]
+            flat_data = CCDData(flat.data, unit=u.adu)
+  
+            # Subtract the master bias frame
+            flat_data = flat_data.subtract(master_bias)
+
+            # Add to the list
+            flat_CCDData.append(flat_data)
+
+    # Put data into a Combiner
+    flat_combiner = Combiner(flat_CCDData)
+
+    # Apply sigma clipping
+    flat_combiner.sigma_clipping(low_thresh=clip_low_bias, high_thresh=clip_high_bias, func=np.ma.median)
+
+    flat_master = flat_combiner.median_combine()
+
+    # Free memory
+    del flat_CCDData
+    del flat_combiner
+
+    print("Master flat frame complete.")
+
+    return flat_master
+
+def get_arc_data(arc_data, master_bias, master_flat, hdunum = 2):
+
+    arc_CCDData = []
+
+    for i in arc_data:
+
+        # Open all the standard frames
+
+        arc_file = fits.open(i)[hdunum]
+        arc_data = CCDData(arc_file.data, unit=u.adu)
+
+        # Subtract the master bias frame
+        arc_data = arc_data.subtract(master_bias)
+
+        # Divide the master flat frame
+        arc_data = arc_data.divide(master_flat)
+
+        # Add to the list
+        arc_CCDData.append(arc_data)
+
+    # Put data into a combiner
+    arc_combiner = Combiner(arc_CCDData)
+
+    # Free memory
+    del arc_CCDData
+
+    arc_master = arc_combiner.median_combine()
+
+    # Free memory
+    del arc_combiner
+
+    return arc_master
+
+def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5):
+
+    input_CCDData = []
+    input_time = []
+    input_header = []
+
+    for i in input_data:
+
+        # Open all the standard frames
+
+        input_file = fits.open(i)
+        input_data = CCDData(input_file[hdunum].data, unit=u.adu)
+
+        # Subtract the master bias frame
+        input_data = input_data.subtract(master_bias)
+
+        # Divide the master flat frame
+        input_data = input_data.divide(master_flat)
+
+        # Add to the list
+        input_CCDData.append(input_data)
+
+        input_header_0 = input_file[0].header
+        input_header_hdunum = input_file[hdunum].header
+        input_header_0.extend(input_header_hdunum)
+        input_header.append(input_header_0)
+
+        # Get the exposure time
+
+        input_time.append(input_header_0['EXPTIME'])
+
+    # Put data into a combiner
+    input_combiner = Combiner(input_CCDData)
+
+    # Free memory
+    del input_CCDData
+
+    # Apply sigma clipping
+    input_combiner.sigma_clipping(low_thresh=clip_low_bias, high_thresh=clip_high_bias, func=np.ma.median)
+
+    input_master = input_combiner.median_combine()
+    input_exptime = np.median(input_time)
+
+    # Free memory
+    del input_combiner
+
+    return input_master, input_exptime
+
+def remove_overscan():
+
+    # Might not use this.
+
+    return None
+
+def create_onedspec():
+
+    return None
+
 def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp):
 
-    # Read the HDUs of the arcs, flats, standards and objects to determine number of grating combinations.
+    # Create a master bias frame.
 
-    big_fits_list = arc + flat + stds + obj
+    bias_master = make_master_bias(bias, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+
+    # Create a master flat frame.
+
+    flat_master = make_master_flat(flat, bias_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+
+    # Read the HDUs of the arcs, standards and objects to determine number of grating combinations.
+
+    big_fits_list = arc + stds + obj
 
     grisms = []
 
@@ -44,47 +210,18 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
     unique_grisms = np.unique(grisms)
 
-    img_red_lists = []
-
-    # Create the aspired image reduction list format from the input file lists for each grating.
+    # Collect the frames appropriate for each grism.
 
     for j in unique_grisms:
 
-        img_red_list = os.path.join(input_path, grp_path, 'img_red_' + j + '.list')
+        if j == "OPEN":
+            continue
 
-        img_red_lists.append(img_red_list)
+        arc_grism = []
 
-        img_red_write = open(img_red_list, "w")
+        stds_grism = []
 
-        if custom_std_grp is None:
-
-            std_red_list = os.path.join(input_path, grp_path, 'img_red_' + j + '_std.list')
-
-            img_red_lists.append(std_red_list)
-
-            std_red_write = open(std_red_list, "w")
-
-        for k in bias:
-
-            img_red_write.write("bias, " + k + ", 2\n")
-
-            if custom_std_grp is None:
-
-                std_red_write.write("bias, " + k + ", 2\n")
-
-        for k in flat:
-
-            hdul = fits.open(k)
-
-            grism = hdul[0].header['GRISM']
-
-            if grism == j:
-
-                img_red_write.write("flat, " + k + ", 2\n")
-
-                if custom_std_grp is None:
-
-                    std_red_write.write("flat, " + k + ", 2\n")
+        obj_grism = []
 
         for k in arc:
 
@@ -94,23 +231,17 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
             if grism == j:
 
-                img_red_write.write("arc, " + k + ", 2\n")
+                arc_grism.append(k)
 
-                if custom_std_grp is None:
+        for k in stds:
 
-                    std_red_write.write("arc, " + k + ", 2\n")
+            hdul = fits.open(k)
 
-        if custom_std_grp is None:
+            grism = hdul[0].header['GRISM']
 
-            for k in stds:
+            if grism == j:
 
-                hdul = fits.open(k)
-
-                grism = hdul[0].header['GRISM']
-
-                if grism == j:
-
-                    std_red_write.write("light, " + k + ", 2\n")
+                stds_grism.append(k)
 
         for k in obj:
 
@@ -120,13 +251,102 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
             if grism == j:
 
-                img_red_write.write("light, " + k + ", 2\n")
+                obj_grism.append(k)
 
-    for j in img_red_lists:
+        # Create folders for the grism reduced data.
 
-        img_red_frames = image_reduction.ImageReduction(j)
+        '''
+        try:
 
-        img_red_frames.reduce()
+            arc_folder = os.path.join(os.path.dirname(arc_grism[0]), "arc_" + j + "_red")
+
+            if not os.path.exists(arc_folder):
+
+                os.makedirs(arc_folder)
+
+        except:
+            continue
+
+        try:
+
+            flat_folder = os.path.join(os.path.dirname(flat_grism[0]), "flat_" + j + "_red")
+
+            if not os.path.exists(flat_folder):
+
+                os.makedirs(flat_folder)
+
+        except:
+            continue
+
+        try:
+
+            stds_folder = os.path.join(os.path.dirname(stds_grism[0]), "stds_" + j + "_red")
+
+            if not os.path.exists(stds_folder):
+
+                os.makedirs(stds_folder)
+
+        except:
+            continue
+
+        try:
+
+            obj_folder = os.path.join(os.path.dirname(obj_grism[0]), "obj_" + j + "_red")
+
+            if not os.path.exists(obj_folder):
+
+                os.makedirs(obj_folder)
+
+        except:
+            continue
+
+        '''
+
+        # Fetch the arc data
+
+        print("Collecting arc frames for grism " + j + "...")
+
+        if len(arc_grism) > 0:
+
+            arc_master = get_arc_data(arc_grism, bias_master, flat_master, hdunum = 2)
+
+        else:
+        
+            arc_master = None
+
+        print("Done.")
+
+        # Fetch the std data
+
+        print("Collecting standard frames for grism " + j + "...")
+
+        if len(stds_grism) > 0:
+
+            stds_master, stds_exptime = get_input_data(stds_grism, bias_master, flat_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+
+            # Remove the bias from the 
+
+        else:
+
+            stds_master = None
+            stds_exptime = None
+
+        print("Done.")
+
+        # Fetch the object data
+
+        print("Collecting light frames for grism " + j + "...")
+
+        if len(obj_grism) > 0:
+
+            obj_master, obj_exptime = get_input_data(obj_grism, bias_master, flat_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+
+        else:
+
+            obj_master = None
+            obj_exptime = None
+
+        print("Done.")
 
     return None
 

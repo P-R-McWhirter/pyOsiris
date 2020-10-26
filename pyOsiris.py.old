@@ -28,29 +28,105 @@ input_path = os.path.join(cwd, input_folder)
 
 # Define functions for the reduction
 
-def make_master_bias(arc_lst):
+def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp):
 
-    # Take an input list of fits files and creates a master bias frame. Returns the file path of the master bias frame.
+    # Read the HDUs of the arcs, flats, standards and objects to determine number of grating combinations.
 
-    
+    big_fits_list = arc + flat + stds + obj
 
-    return None
+    grisms = []
 
-def subtract_bias_frame():
+    for j in big_fits_list:
 
-    return None
+        hdul = fits.open(j)
 
-def make_master_flat_field():
+        grisms.append(hdul[0].header['GRISM'])
 
-    return None
+    unique_grisms = np.unique(grisms)
 
-def remove_overscan():
+    img_red_lists = []
 
-    # Might not use this.
+    # Create the aspired image reduction list format from the input file lists for each grating.
 
-    return None
+    for j in unique_grisms:
 
-def create_onedspec():
+        img_red_list = os.path.join(input_path, grp_path, 'img_red_' + j + '.list')
+
+        img_red_lists.append(img_red_list)
+
+        img_red_write = open(img_red_list, "w")
+
+        if custom_std_grp is None:
+
+            std_red_list = os.path.join(input_path, grp_path, 'img_red_' + j + '_std.list')
+
+            img_red_lists.append(std_red_list)
+
+            std_red_write = open(std_red_list, "w")
+
+        for k in bias:
+
+            img_red_write.write("bias, " + k + ", 2\n")
+
+            if custom_std_grp is None:
+
+                std_red_write.write("bias, " + k + ", 2\n")
+
+        for k in flat:
+
+            hdul = fits.open(k)
+
+            grism = hdul[0].header['GRISM']
+
+            if grism == j:
+
+                img_red_write.write("flat, " + k + ", 2\n")
+
+                if custom_std_grp is None:
+
+                    std_red_write.write("flat, " + k + ", 2\n")
+
+        for k in arc:
+
+            hdul = fits.open(k)
+
+            grism = hdul[0].header['GRISM']
+
+            if grism == j:
+
+                img_red_write.write("arc, " + k + ", 2\n")
+
+                if custom_std_grp is None:
+
+                    std_red_write.write("arc, " + k + ", 2\n")
+
+        if custom_std_grp is None:
+
+            for k in stds:
+
+                hdul = fits.open(k)
+
+                grism = hdul[0].header['GRISM']
+
+                if grism == j:
+
+                    std_red_write.write("light, " + k + ", 2\n")
+
+        for k in obj:
+
+            hdul = fits.open(k)
+
+            grism = hdul[0].header['GRISM']
+
+            if grism == j:
+
+                img_red_write.write("light, " + k + ", 2\n")
+
+    for j in img_red_lists:
+
+        img_red_frames = image_reduction.ImageReduction(j)
+
+        img_red_frames.reduce()
 
     return None
 
@@ -77,6 +153,7 @@ if custom_std_grp != None:
     std_arc = []
     std_bias = []
     std_flat = []
+    std_std = []
     std_obj = []
 
     for file in os.listdir(os.path.join(input_path, custom_std_grp, "arc")):
@@ -95,7 +172,13 @@ if custom_std_grp != None:
         if file.endswith(".fits"):
             std_obj.append(os.path.join(input_path, custom_std_grp, "object", file))
 
-    # Median combine bias frames
+    # Run aspired image reduction routine
+
+    do_img_red(input_path, custom_std_grp, std_arc, std_bias, std_flat, std_std, std_obj, custom_std_grp)
+
+
+
+
 
 
 
@@ -105,9 +188,9 @@ for i in input_grps:
     arc = []
     bias = []
     flat = []
-    obj = []
     stds = []
-
+    obj = []
+    
     for file in os.listdir(os.path.join(input_path, i, "arc")):
         if file.endswith(".fits"):
             arc.append(os.path.join(input_path, i, "arc", file))
@@ -120,15 +203,15 @@ for i in input_grps:
         if file.endswith(".fits"):
             flat.append(os.path.join(input_path, i, "flat", file))
 
-    for file in os.listdir(os.path.join(input_path, i, "object")):
-        if file.endswith(".fits"):
-            obj.append(os.path.join(input_path, i, "object", file))
-
     for file in os.listdir(os.path.join(input_path, i, "stds")):
         if file.endswith(".fits"):
             stds.append(os.path.join(input_path, i, "stds", file))
 
-    # Placeholder: list all the fits files in the expected folders:
+    for file in os.listdir(os.path.join(input_path, i, "object")):
+        if file.endswith(".fits"):
+            obj.append(os.path.join(input_path, i, "object", file))
 
-    print(bias)
+    # Run aspired image reduction routine (Placeholder)
+
+    do_img_red(input_path, i, arc, bias, flat, stds, obj, custom_std_grp)
 
