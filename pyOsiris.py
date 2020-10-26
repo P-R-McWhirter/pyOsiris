@@ -60,7 +60,7 @@ def make_master_bias(bias_frames, hdunum = 2, clip_low_bias = 5, clip_high_bias 
 
     return bias_master
 
-def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5):
+def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_flat = 5, clip_high_flat = 5):
 
     # Creates a master flat frame using median combine
 
@@ -83,7 +83,7 @@ def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_bias = 5, cl
     flat_combiner = Combiner(flat_CCDData)
 
     # Apply sigma clipping
-    flat_combiner.sigma_clipping(low_thresh=clip_low_bias, high_thresh=clip_high_bias, func=np.ma.median)
+    flat_combiner.sigma_clipping(low_thresh=clip_low_flat, high_thresh=clip_high_flat, func=np.ma.median)
 
     flat_master = flat_combiner.median_combine()
 
@@ -98,6 +98,11 @@ def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_bias = 5, cl
 def get_arc_data(arc_data, master_bias, master_flat, hdunum = 2):
 
     arc_CCDData = []
+
+    arc_first = fits.open(arc_data[0])
+    arc_header = arc_first[0].header
+    arc_header_hdunum = arc_first[hdunum].header
+    arc_header.extend(arc_header_hdunum)
 
     for i in arc_data:
 
@@ -126,9 +131,9 @@ def get_arc_data(arc_data, master_bias, master_flat, hdunum = 2):
     # Free memory
     del arc_combiner
 
-    return arc_master
+    return arc_master, arc_header
 
-def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5):
+def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_input = 5, clip_high_input = 5):
 
     input_CCDData = []
     input_time = []
@@ -166,7 +171,7 @@ def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_bi
     del input_CCDData
 
     # Apply sigma clipping
-    input_combiner.sigma_clipping(low_thresh=clip_low_bias, high_thresh=clip_high_bias, func=np.ma.median)
+    input_combiner.sigma_clipping(low_thresh=clip_low_input, high_thresh=clip_high_input, func=np.ma.median)
 
     input_master = input_combiner.median_combine()
     input_exptime = np.median(input_time)
@@ -174,7 +179,116 @@ def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_bi
     # Free memory
     del input_combiner
 
-    return input_master, input_exptime
+    return input_master, input_exptime, input_header
+
+def create_fits(input_frame, input_header, light_filename, bias_filename, flat_filename, clip_low_bias, clip_high_bias, clip_low_flat, clip_high_flat, clip_low_light, clip_high_light, exptime_light, hdunum, rotate = True):
+
+    # Rotate the frame if needed (used for std and obj usually)
+
+    if rotate == True:
+
+        input_frame = np.rot90(input_frame)
+
+    input_frame = np.array((input_frame))
+
+    # Construct a FITS object of the reduced frame
+
+    input_fits = fits.ImageHDU(input_frame)
+
+    input_fits.header = input_header
+
+    # Add the names of all the light frames to header
+    if len(light_filename) > 0:
+        for i in range(len(light_filename)):
+            input_fits.header.set(keyword='light' + str(i + 1),
+                                  value=light_filename[i],
+                                  comment='Light frames')
+
+    # Add the names of all the bias frames to header
+    if len(bias_filename) > 0:
+        for i in range(len(bias_filename)):
+            input_fits.header.set(keyword='bias' + str(i + 1),
+                                  value=bias_filename[i],
+                                  comment='Bias frames')
+
+    # Add the names of all the flat frames to header
+    if len(flat_filename) > 0:
+        for i in range(len(flat_filename)):
+            input_fits.header.set(keyword='flat' + str(i + 1),
+                                  value=flat_filename[i],
+                                  comment='Flat frames')
+
+    # Add all the other keywords
+    input_fits.header.set(
+        keyword='COMBTYPE',
+        value="median",
+        comment='Type of image combine of the light frames.')
+    input_fits.header.set(
+        keyword='SIGCLIP',
+        value="True",
+        comment='True if the light frames are sigma clipped.')
+    input_fits.header.set(
+        keyword='CLIPLOW',
+        value=clip_low_light,
+        comment='Lower threshold of sigma clipping of the light frames.')
+    input_fits.header.set(
+        keyword='CLIPHIG',
+        value=clip_high_light,
+        comment='Higher threshold of sigma clipping of the light frames.')
+    input_fits.header.set(
+        keyword='XPOSURE',
+        value=exptime_light,
+        comment='Average exposure time of the light frames.')
+    input_fits.header.set(
+        keyword='KEYWORD',
+        value="EXPTIME",
+        comment='Automatically identified exposure time keyword of the '
+        'light frames.')
+    input_fits.header.set(
+        keyword='BCOMTYPE',
+        value="median",
+        comment='Type of image combine of the bias frames.')
+    input_fits.header.set(
+        keyword='BSIGCLIP',
+        value="True",
+        comment='True if the dark frames are sigma clipped.')
+    input_fits.header.set(
+        keyword='BCLIPLOW',
+        value=clip_low_bias,
+        comment='Lower threshold of sigma clipping of the bias frames.')
+    input_fits.header.set(
+        keyword='BCLIPHIG',
+        value=clip_high_bias,
+        comment='Higher threshold of sigma clipping of the bias frames.')
+    input_fits.header.set(
+        keyword='FCOMTYPE',
+        value="median",
+        comment='Type of image combine of the flat frames.')
+    input_fits.header.set(
+        keyword='FSIGCLIP',
+        value="True",
+        comment='True if the flat frames are sigma clipped.')
+    input_fits.header.set(
+        keyword='FCLIPLOW',
+        value=clip_low_flat,
+        comment='Lower threshold of sigma clipping of the flat frames.')
+    input_fits.header.set(
+         keyword='FCLIPHIG',
+         value=clip_high_flat,
+         comment='Higher threshold of sigma clipping of the flat frames.')
+
+    return input_frame
+
+def save_fits(input_fits, output_folder, filename, extension = 'fits', overwrite = False):
+
+    input_fits = fits.PrimaryHDU(input_fits)
+
+    output_path = os.path.join(output_folder, filename + '.' + extension)
+
+    # Save file to disk
+    input_fits.writeto(output_path, overwrite=overwrite)
+
+    return output_path
 
 def remove_overscan():
 
@@ -186,15 +300,15 @@ def create_onedspec():
 
     return None
 
-def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
+def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5, clip_low_flat = 5, clip_high_flat = 5, clip_low_light = 5, clip_high_light = 5):
 
     # Create a master bias frame.
 
-    bias_master = make_master_bias(bias, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+    bias_master = make_master_bias(bias, hdunum = hdunum, clip_low_bias = clip_low_bias, clip_high_bias = clip_high_bias)
 
     # Create a master flat frame.
 
-    flat_master = make_master_flat(flat, bias_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+    flat_master = make_master_flat(flat, bias_master, hdunum = hdunum, clip_low_flat = clip_low_flat, clip_high_flat = clip_high_flat)
 
     # Read the HDUs of the arcs, standards and objects to determine number of grating combinations.
 
@@ -212,9 +326,18 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
 
     # Collect the frames appropriate for each grism.
 
+    all_master_arc_paths = []
+    all_master_stds_paths = []
+    all_master_obj_paths = []
+
     for j in unique_grisms:
 
         if j == "OPEN":
+
+            all_master_arc_paths.append(None)
+            all_master_stds_paths.append(None)
+            all_master_obj_paths.append(None)
+
             continue
 
         arc_grism = []
@@ -259,11 +382,12 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
 
         if len(arc_grism) > 0:
 
-            arc_master = get_arc_data(arc_grism, bias_master, flat_master, hdunum = 2)
+            arc_master, arc_header = get_arc_data(arc_grism, bias_master, flat_master, hdunum = hdunum)
 
         else:
         
             arc_master = None
+            arc_header = None
 
         print("Done.")
 
@@ -273,12 +397,13 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
 
         if len(stds_grism) > 0:
 
-            stds_master, stds_exptime = get_input_data(stds_grism, bias_master, flat_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+            stds_master, stds_exptime, stds_header = get_input_data(stds_grism, bias_master, flat_master, hdunum = hdunum, clip_low_input = clip_low_light, clip_high_input = clip_high_light)
 
         else:
 
             stds_master = None
             stds_exptime = None
+            stds_header = None
 
         print("Done.")
 
@@ -288,18 +413,47 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
 
         if len(obj_grism) > 0:
 
-            obj_master, obj_exptime = get_input_data(obj_grism, bias_master, flat_master, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5)
+            obj_master, obj_exptime, obj_header = get_input_data(obj_grism, bias_master, flat_master, hdunum = hdunum, clip_low_input = clip_low_light, clip_high_input = clip_high_light)
 
         else:
 
             obj_master = None
             obj_exptime = None
+            obj_header = None
 
         print("Done.")
 
-    return None
+        # Create fits objects and save them for the arcs, stds and obj frames.
+
+        # First for the arc
+
+        arc_fits = create_fits(arc_master, arc_header, obj_grism, bias, flat, clip_low_bias, clip_high_bias, clip_low_flat, clip_high_flat, clip_low_light, clip_high_light, obj_exptime, hdunum, rotate = True)
+
+        # Then the std frame
+
+        stds_fits = create_fits(stds_master, stds_header[0], stds_grism, bias, flat, clip_low_bias, clip_high_bias, clip_low_flat, clip_high_flat, clip_low_light, clip_high_light, stds_exptime, hdunum, rotate = True)
+
+        # Then the obj frame
+
+        obj_fits = create_fits(obj_master, obj_header[0], obj_grism, bias, flat, clip_low_bias, clip_high_bias, clip_low_flat, clip_high_flat, clip_low_light, clip_high_light, obj_exptime, hdunum, rotate = True)
+
+        # Save the master arc, master std and master obj frame to the base group directory.
+
+        master_arc_path = save_fits(arc_fits, os.path.join(input_path, grp_path), "arc_" + j + "_master", extension = 'fits', overwrite = True)
+
+        master_stds_path = save_fits(stds_fits, os.path.join(input_path, grp_path), "stds_" + j + "_master", extension = 'fits', overwrite = True)
+
+        master_obj_path = save_fits(obj_fits, os.path.join(input_path, grp_path), "obj_" + j + "_master", extension = 'fits', overwrite = True)
+
+        all_master_arc_paths.append(master_arc_path)
+        all_master_stds_paths.append(master_stds_path)
+        all_master_obj_paths.append(master_obj_path)
+
+    return unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths
 
 
+
+#############################################
 
 
 
@@ -352,5 +506,10 @@ for i in input_folders:
 
     # Run image reduction routine
 
-    do_img_red(input_path, i, arc, bias, flat, stds, obj)
+    unique_grisms, all_master_arc_paths, all_master_stds_paths, all_master_obj_paths = do_img_red(input_path, i, arc, bias, flat, stds, obj, hdunum = 2, clip_low_bias = 5, clip_high_bias = 5, clip_low_flat = 5, clip_high_flat = 5, clip_low_light = 5, clip_high_light = 5)
+
+    print(unique_grisms)
+    print(all_master_arc_paths)
+    print(all_master_stds_paths)
+    print(all_master_obj_paths)
 
