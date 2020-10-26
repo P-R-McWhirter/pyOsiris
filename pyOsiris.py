@@ -186,7 +186,7 @@ def create_onedspec():
 
     return None
 
-def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp):
+def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj):
 
     # Create a master bias frame.
 
@@ -253,55 +253,6 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
                 obj_grism.append(k)
 
-        # Create folders for the grism reduced data.
-
-        '''
-        try:
-
-            arc_folder = os.path.join(os.path.dirname(arc_grism[0]), "arc_" + j + "_red")
-
-            if not os.path.exists(arc_folder):
-
-                os.makedirs(arc_folder)
-
-        except:
-            continue
-
-        try:
-
-            flat_folder = os.path.join(os.path.dirname(flat_grism[0]), "flat_" + j + "_red")
-
-            if not os.path.exists(flat_folder):
-
-                os.makedirs(flat_folder)
-
-        except:
-            continue
-
-        try:
-
-            stds_folder = os.path.join(os.path.dirname(stds_grism[0]), "stds_" + j + "_red")
-
-            if not os.path.exists(stds_folder):
-
-                os.makedirs(stds_folder)
-
-        except:
-            continue
-
-        try:
-
-            obj_folder = os.path.join(os.path.dirname(obj_grism[0]), "obj_" + j + "_red")
-
-            if not os.path.exists(obj_folder):
-
-                os.makedirs(obj_folder)
-
-        except:
-            continue
-
-        '''
-
         # Fetch the arc data
 
         print("Collecting arc frames for grism " + j + "...")
@@ -348,6 +299,10 @@ def do_img_red(input_path, grp_path, arc, bias, flat, stds, obj, custom_std_grp)
 
     return None
 
+
+
+
+
 # Count the number of observation groups
 
 input_folders = np.sort([i for i in os.listdir(input_path) if os.path.isdir(os.path.join(input_path, i))])
@@ -364,43 +319,9 @@ if custom_std_grp != None:
     if custom_std_present == False:
         raise NameError("Custom standard group not found in input folder. Exiting...")
     else:
-        print("Processing standard group...")
+        print("Using custom standard group...")
 
-    # Since we have a custom standard star group, we process it first.
-
-    std_arc = []
-    std_bias = []
-    std_flat = []
-    std_std = []
-    std_obj = []
-
-    for file in os.listdir(os.path.join(input_path, custom_std_grp, "arc")):
-        if file.endswith(".fits"):
-            std_arc.append(os.path.join(input_path, custom_std_grp, "arc", file))
-
-    for file in os.listdir(os.path.join(input_path, custom_std_grp, "bias")):
-        if file.endswith(".fits"):
-            std_bias.append(os.path.join(input_path, custom_std_grp, "bias", file))
-
-    for file in os.listdir(os.path.join(input_path, custom_std_grp, "flat")):
-        if file.endswith(".fits"):
-            std_flat.append(os.path.join(input_path, custom_std_grp, "flat", file))
-
-    for file in os.listdir(os.path.join(input_path, custom_std_grp, "object")):
-        if file.endswith(".fits"):
-            std_obj.append(os.path.join(input_path, custom_std_grp, "object", file))
-
-    # Run aspired image reduction routine
-
-    do_img_red(input_path, custom_std_grp, std_arc, std_bias, std_flat, std_std, std_obj, custom_std_grp)
-
-
-
-
-
-
-
-for i in input_grps:
+for i in input_folders:
     print("Beginning group: " + i)
 
     arc = []
@@ -429,7 +350,7 @@ for i in input_grps:
         if file.endswith(".fits"):
             obj.append(os.path.join(input_path, i, "object", file))
 
-    # Run aspired image reduction routine (Placeholder)
+    # Run image reduction routine
 
-    do_img_red(input_path, i, arc, bias, flat, stds, obj, custom_std_grp)
+    do_img_red(input_path, i, arc, bias, flat, stds, obj)
 
