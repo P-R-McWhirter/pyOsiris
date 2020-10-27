@@ -8,6 +8,8 @@ from astropy.stats import sigma_clip
 from ccdproc import Combiner
 from aspired import image_reduction
 from aspired import spectral_reduction
+from matplotlib.pyplot import *
+ion()
 
 ap = argparse.ArgumentParser()
 
@@ -460,52 +462,105 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
 
             continue
 
-        light_frame = fits.open(all_master_obj_paths[n])[0].data
+        spec_science = fits.open(all_master_obj_paths[n])
+        spec_standard = fits.open(all_master_stds_paths[n])
+        spec_arc = fits.open(all_master_arc_paths[n])
 
-        twodspec = spectral_reduction.TwoDSpec(light_frame, cosmicray=True, readnoise=4.5)
+        spec_science[0].data[np.isnan(spec_science[0].data)] = 0.
+        spec_standard[0].data[np.isnan(spec_standard[0].data)] = 0.
+        spec_arc[0].data[np.isnan(spec_arc[0].data)] = 0.
 
-        twodspec.ap_trace(nspec=2, display=False)
+        spatial_mask = np.arange(100, 1000)
 
-        twodspec.ap_extract(
-            apwidth=15,
-            skywidth=10,
-            skydeg=1,
-            optimal=True,
-            display=False,
-            filename='example_output/example_01_a_science_apextract',
-            save_iframe=True)
+        science_twodspec = spectral_reduction.TwoDSpec(
+            spec_science[0].data,
+            spec_science[0].header,
+            spatial_mask=spatial_mask,
+            saxis=1)
 
-        twodspec.ap_extract(
-            apwidth=15,
-            skywidth=10,
-            skydeg=1,
-            optimal=True,
-            forced=True,
-            variances=twodspec.spectrum_list[0].var,
-            display=False,
-            filename='example_output/example_01_a_science_apextract_forced_weighted',
-            save_iframe=True)
+        standard_twodspec = spectral_reduction.TwoDSpec(
+            spec_standard[0].data,
+            spec_standard[0].header,
+            spatial_mask=spatial_mask,
+            saxis=1)
 
-        twodspec.ap_extract(
-            apwidth=15,
-            skywidth=10,
-            skydeg=1,
-            optimal=False,
-            display=False,
-            filename='example_output/example_01_a_science_apextract_tophat',
-            save_iframe=True)
+        science_twodspec.ap_trace(nspec=1)
+        science_twodspec.ap_extract(display=True, apwidth = 15)
 
-        twodspec.ap_extract(
-            apwidth=15,
-            skywidth=10,
-            skydeg=1,
-            optimal=True,
-            forced=True,
-            variances=1000000.,
-            display=False,
-            filename=
-            'example_output/example_01_a_science_apextract_forced_unit_weighted',
-            save_iframe=True)
+        standard_twodspec.ap_trace(nspec=1)
+        standard_twodspec.ap_extract(display=True, apwidth = 15)
+
+        onedspec = spectral_reduction.OneDSpec()
+        onedspec.from_twodspec(science_twodspec, stype='science')
+        onedspec.from_twodspec(standard_twodspec, stype='standard')
+        onedspec.add_arc(spec_arc[0].data[spatial_mask])
+        onedspec.extract_arc_spec()
+        onedspec.find_arc_lines(background=1e-3, prominence=1e-2)
+
+        try:
+
+            atlas = [
+                3650.153, 4046.563, 4077.831, 4358.328, 5460.735, 5769.598, 5790.663,
+                6682.960, 6752.834, 6871.289, 6965.431, 7030.251, 7067.218, 7147.042,
+                7272.936, 7383.981, 7503.869, 7514.652, 7635.106, 7723.98
+            ]
+            element = ['HgAr'] * len(atlas)
+
+            onedspec.initialise_calibrator(  stype='science+standard')
+            onedspec.set_hough_properties(
+                num_slopes=10000,
+                xbins=200,
+                ybins=200,
+                min_wavelength=3500.,
+                max_wavelength=8000.,
+                range_tolerance=500.,
+                linearity_tolerance=50,
+                stype='science+standard')
+
+            onedspec.load_user_atlas(
+                elements=element,
+                wavelengths=atlas,
+                stype='science+standard')
+
+            onedspec.add_atlas(
+                elements=['Ne'],
+                min_intensity=5.,
+                min_atlas_wavelength=3500.,
+                max_atlas_wavelength=8000.)
+
+            onedspec.set_ransac_properties(
+                sample_size=5,
+                top_n_candidate=5,
+                linear=True,
+                filter_close=True,
+                ransac_tolerance=5,
+                candidate_weighted=True,
+                hough_weight=1.0,
+                stype='science+standard')
+            onedspec.do_hough_transform()
+            onedspec.fit(max_tries=50, stype='science+standard')
+            onedspec.apply_wavelength_calibration(stype='science+standard')
+
+            onedspec.load_standard(target='Feige110', library='esoxshooter')
+
+            onedspec.inspect_standard(save_iframe=True, filename='test/test_inspect_standard_' + j)
+
+            onedspec.compute_sensitivity(kind='cubic', mask_fit_size = 1)
+            onedspec.inspect_sensitivity(save_iframe=True, filename='test/test_sensitivity_' + j)
+
+            onedspec.apply_flux_calibration(stype='science+standard')
+
+            onedspec.inspect_reduced_spectrum(stype='science', save_iframe=True, filename='test/test_science_spectrum_' + j)
+
+            onedspec.inspect_reduced_spectrum(stype='standard', save_iframe=True, filename='test/test_standard_spectrum_' + j)
+
+            onedspec.inspect_reduced_spectrum(display=True)
+
+        except:
+
+            print("Ransac failed (probably R2500U) PLACEHOLDER ERROR")
+
+            continue
 
     return None
 
