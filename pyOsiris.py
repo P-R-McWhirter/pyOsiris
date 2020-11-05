@@ -5,7 +5,7 @@ from astropy import units as u
 from astropy.io import fits
 from astropy.nddata import CCDData
 from astropy.stats import sigma_clip
-from ccdproc import Combiner
+from ccdproc import Combiner, flat_correct
 from aspired import image_reduction
 from aspired import spectral_reduction
 from matplotlib.pyplot import *
@@ -45,7 +45,7 @@ def make_master_bias(bias_frames, hdunum = 2, clip_low_bias = 5, clip_high_bias 
     for i in bias_frames:
             # Open all the bias frames
             bias = fits.open(i)[hdunum]
-            bias_CCDData.append(CCDData(bias.data, unit=u.adu))
+            bias_CCDData.append(CCDData(bias.data, unit=u.ct))
 
     # Put data into a Combiner
     bias_combiner = Combiner(bias_CCDData)
@@ -74,10 +74,15 @@ def make_master_flat(flat_frames, master_bias, hdunum = 2, clip_low_flat = 5, cl
     for i in flat_frames:
             # Open all the flat frames
             flat = fits.open(i)[hdunum]
-            flat_data = CCDData(flat.data, unit=u.adu)
+            flat_data = CCDData(flat.data, unit=u.ct)
   
             # Subtract the master bias frame
             flat_data = flat_data.subtract(master_bias)
+
+            # Check for bad regions (not illuminated) in the spatial direction
+            ycomp = flat.data.sum(axis=1)
+            illum_thresh = 0.8
+            ok = np.where( (ycomp >= np.nanmedian(ycomp)*illum_thresh) )
 
             # Add to the list
             flat_CCDData.append(flat_data)
@@ -112,13 +117,13 @@ def get_arc_data(arc_data, master_bias, master_flat, hdunum = 2):
         # Open all the standard frames
 
         arc_file = fits.open(i)[hdunum]
-        arc_data = CCDData(arc_file.data, unit=u.adu)
+        arc_data = CCDData(arc_file.data, unit=u.ct)
 
         # Subtract the master bias frame
         arc_data = arc_data.subtract(master_bias)
 
         # Divide the master flat frame
-        arc_data = arc_data.divide(master_flat)
+        arc_data = flat_correct(arc_data, master_flat)
 
         # Add to the list
         arc_CCDData.append(arc_data)
@@ -147,13 +152,13 @@ def get_input_data(input_data, master_bias, master_flat, hdunum = 2, clip_low_in
         # Open all the standard frames
 
         input_file = fits.open(i)
-        input_data = CCDData(input_file[hdunum].data, unit=u.adu)
+        input_data = CCDData(input_file[hdunum].data, unit=u.ct)
 
         # Subtract the master bias frame
         input_data = input_data.subtract(master_bias)
 
         # Divide the master flat frame
-        input_data = input_data.divide(master_flat)
+        input_data = flat_correct(input_data, master_flat)
 
         # Add to the list
         input_CCDData.append(input_data)
@@ -495,7 +500,8 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
         onedspec.from_twodspec(standard_twodspec, stype='standard')
         onedspec.add_arc(spec_arc[0].data[spatial_mask])
         onedspec.extract_arc_spec()
-        onedspec.find_arc_lines(background=1e-3, prominence=1e-2)
+        #onedspec.find_arc_lines(background=1e1, prominence=1e2)
+        onedspec.find_arc_lines()
 
         try:
 
@@ -525,7 +531,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
             onedspec.add_atlas(
                 elements=['Ne'],
                 min_intensity=5.,
-                min_atlas_wavelength=3500.,
+                min_atlas_wavelength=5000.,
                 max_atlas_wavelength=8000.)
 
             onedspec.set_ransac_properties(
@@ -538,7 +544,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
                 hough_weight=1.0,
                 stype='science+standard')
             onedspec.do_hough_transform()
-            onedspec.fit(max_tries=50, stype='science+standard')
+            onedspec.fit(max_tries=300, stype='science+standard')
             onedspec.apply_wavelength_calibration(stype='science+standard')
 
             onedspec.load_standard(target='Feige110', library='esoxshooter')
