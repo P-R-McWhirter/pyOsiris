@@ -490,7 +490,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
             saxis=1)
 
         science_twodspec.ap_trace(nspec=1)
-        science_twodspec.ap_extract(display=True, apwidth = 15)
+        science_twodspec.ap_extract(display=True, apwidth = 11)
 
         standard_twodspec.ap_trace(nspec=1)
         standard_twodspec.ap_extract(display=True, apwidth = 15)
@@ -514,13 +514,13 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
 
             onedspec.initialise_calibrator(  stype='science+standard')
             onedspec.set_hough_properties(
-                num_slopes=10000,
+                num_slopes=20000,
                 xbins=200,
                 ybins=200,
                 min_wavelength=3500.,
                 max_wavelength=8000.,
                 range_tolerance=500.,
-                linearity_tolerance=50,
+                linearity_tolerance=50.,
                 stype='science+standard')
 
             onedspec.load_user_atlas(
@@ -531,7 +531,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
             onedspec.add_atlas(
                 elements=['Ne'],
                 min_intensity=5.,
-                min_atlas_wavelength=5000.,
+                min_atlas_wavelength=3500.,
                 max_atlas_wavelength=8000.)
 
             onedspec.set_ransac_properties(
@@ -544,7 +544,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
                 hough_weight=1.0,
                 stype='science+standard')
             onedspec.do_hough_transform()
-            onedspec.fit(max_tries=300, stype='science+standard')
+            onedspec.fit(max_tries=1000, stype='science+standard')
             onedspec.apply_wavelength_calibration(stype='science+standard')
 
             onedspec.load_standard(target='Feige110', library='esoxshooter')
