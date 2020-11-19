@@ -490,10 +490,10 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
             saxis=1)
 
         science_twodspec.ap_trace(nspec=1)
-        science_twodspec.ap_extract(display=True, apwidth = 11)
+        science_twodspec.ap_extract(display=True, apwidth = 7)
 
         standard_twodspec.ap_trace(nspec=1)
-        standard_twodspec.ap_extract(display=True, apwidth = 15)
+        standard_twodspec.ap_extract(display=True, apwidth = 13)
 
         onedspec = spectral_reduction.OneDSpec()
         onedspec.from_twodspec(science_twodspec, stype='science')
@@ -514,7 +514,7 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
 
             onedspec.initialise_calibrator(  stype='science+standard')
             onedspec.set_hough_properties(
-                num_slopes=20000,
+                num_slopes=40000,
                 xbins=200,
                 ybins=200,
                 min_wavelength=3500.,
@@ -561,6 +561,10 @@ def do_spec_red(input_path, grp_path, unique_grisms, all_master_arc_paths, all_m
             onedspec.inspect_reduced_spectrum(stype='standard', save_iframe=True, filename='test/test_standard_spectrum_' + j)
 
             onedspec.inspect_reduced_spectrum(display=True)
+
+            onedspec.save_fits(output = 'flux_resampled+wavecal+flux+count+trace', filename = 'test/test_full_reduction_' + j, stype='science+standard', overwrite=True)
+
+            onedspec.save_csv(output = 'flux_resampled+wavecal+flux+count+trace', filename = 'test/test_full_reduction_' + j, stype='science+standard', overwrite=True)
 
         except:
 
